@@ -1,18 +1,22 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { account, restoreAccount } from './api'
-import CatalogView from './views/CatalogView.vue'
-import AuthView from './views/AuthView.vue'
-import LoansView from './views/LoansView.vue'
-import AdminView from './views/AdminView.vue'
+import HomeView from './components/HomeView.vue'
+import CatalogView from './components/CatalogView.vue'
+import AuthView from './components/AuthView.vue'
+import ProfileView from './components/ProfileView.vue'
+import AdminView from './components/AdminView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', name: 'catalog', component: CatalogView },
+    { path: '/', name: 'home', component: HomeView },
+    { path: '/books', name: 'catalog', component: CatalogView },
+    { path: '/about', name: 'about', component: () => import('./components/AboutView.vue') },
+    { path: '/contact', name: 'contact', component: () => import('./components/ContactView.vue') },
     { path: '/login', name: 'login', component: AuthView },
     { path: '/register', name: 'register', component: AuthView },
-    { path: '/loans', name: 'loans', component: LoansView, meta: { reader: true } },
+    { path: '/profile', alias: '/loans', name: 'profile', component: ProfileView, meta: { reader: true } },
     { path: '/admin', name: 'admin', component: AdminView },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
@@ -28,7 +32,10 @@ router.beforeEach(async (to) => {
       ElMessage.error(error.message)
     }
   }
-  if (to.meta.reader && account.value?.role !== 'READER') return { name: 'login' }
+  if (to.meta.reader && account.value?.role !== 'READER') {
+    if (account.value?.role === 'ADMIN') return { name: 'admin' }
+    return { name: 'login', query: { redirect: '/profile' } }
+  }
   if (['login', 'register'].includes(to.name) && account.value?.role === 'READER') return '/'
 })
 

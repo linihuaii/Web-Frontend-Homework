@@ -4,6 +4,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY index.html vite.config.js ./
 COPY src ./src
+ARG VITE_CONTACT_EMAIL
 RUN npm run build
 
 FROM nginx:1.28-alpine

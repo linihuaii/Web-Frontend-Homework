@@ -18,6 +18,9 @@ class LibraryController {
             @Size(max = 1000, message = "简介最多 1000 字") String description,
             @NotNull(message = "请输入馆藏数量") @Min(value = 0, message = "馆藏数量不能为负数") Integer total) {}
     record LoanInput(@NotNull(message = "请选择图书") @Positive Long bookId) {}
+    record FeedbackInput(
+            @NotBlank(message = "请输入反馈主题") @Size(max = 100, message = "主题最多 100 字") String subject,
+            @NotBlank(message = "请输入反馈内容") @Size(max = 2000, message = "内容最多 2000 字") String message) {}
 
     private final LibraryService library;
 
@@ -28,6 +31,30 @@ class LibraryController {
     @GetMapping("/books")
     List<Map<String, Object>> books() {
         return library.books();
+    }
+
+    @GetMapping("/stats")
+    Map<String, Object> stats() {
+        return library.stats();
+    }
+
+    @PostMapping("/feedback")
+    @ResponseStatus(HttpStatus.CREATED)
+    void submitFeedback(@Valid @RequestBody FeedbackInput input, HttpServletRequest request) {
+        library.submitFeedback(AuthController.require(request, "READER").id(), input);
+    }
+
+    @GetMapping("/admin/feedback")
+    List<Map<String, Object>> feedback(HttpServletRequest request) {
+        AuthController.require(request, "ADMIN");
+        return library.feedback();
+    }
+
+    @PatchMapping(value = "/admin/feedback/{id}/resolve", consumes = "application/json")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void resolveFeedback(@PathVariable long id, HttpServletRequest request) {
+        AuthController.require(request, "ADMIN");
+        library.resolveFeedback(id);
     }
 
     @GetMapping("/loans")
@@ -45,6 +72,12 @@ class LibraryController {
     @ResponseStatus(HttpStatus.CREATED)
     void borrow(@Valid @RequestBody LoanInput input, HttpServletRequest request) {
         library.borrow(input.bookId(), AuthController.require(request, "READER").id());
+    }
+
+    @PostMapping(value = "/loans/{id}/return", consumes = "application/json")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void returnLoan(@PathVariable long id, HttpServletRequest request) {
+        library.returnLoan(id, AuthController.require(request, "READER").id());
     }
 
     @PostMapping("/admin/books")

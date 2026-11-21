@@ -1,7 +1,12 @@
 <script setup>
 import { computed, ref } from 'vue'
 
-const props = defineProps({ rows: { type: Array, required: true }, admin: Boolean, processing: Number })
+const props = defineProps({
+  rows: { type: Array, required: true },
+  admin: Boolean,
+  canReturn: Boolean,
+  processing: Number,
+})
 defineEmits(['process'])
 
 const statuses = {
@@ -31,16 +36,17 @@ const visibleRows = computed(() => props.rows.filter(row => !status.value || row
     </el-table-column>
     <el-table-column prop="requestedAt" label="申请时间" width="174" />
     <el-table-column prop="updatedAt" label="更新时间" width="174" />
-    <el-table-column v-if="admin" label="操作" width="174">
+    <el-table-column v-if="admin || canReturn" label="操作" :width="admin ? 174 : 112" :fixed="canReturn ? 'right' : false">
       <template #default="{ row }">
-        <template v-if="row.status === 'PENDING'">
+        <template v-if="admin && row.status === 'PENDING'">
           <el-button size="small" type="primary" :disabled="processing != null"
             @click="$emit('process', row, 'APPROVED')">批准</el-button>
           <el-button size="small" type="danger" plain :disabled="processing != null"
             @click="$emit('process', row, 'REJECTED')">拒绝</el-button>
         </template>
         <el-button v-else-if="row.status === 'APPROVED'" size="small" :disabled="processing != null"
-          @click="$emit('process', row, 'RETURNED')">登记归还</el-button>
+          :loading="processing === row.id"
+          @click="$emit('process', row, 'RETURNED')">{{ admin ? '登记归还' : '归还图书' }}</el-button>
       </template>
     </el-table-column>
   </el-table>

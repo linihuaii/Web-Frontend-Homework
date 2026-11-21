@@ -4,7 +4,7 @@ COPY pom.xml .
 COPY src ./src
 RUN mvn -B -ntp package
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:21-jre-noble
 WORKDIR /app
 COPY --from=build /build/target/library-1.0.0.jar /app/library.jar
 USER 10001:10001

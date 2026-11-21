@@ -39,7 +39,10 @@ async function submit() {
       await router.push('/login')
     } else {
       account.value = result
-      if (!props.admin) await router.push('/')
+      if (!props.admin) {
+        const destination = route.query.redirect
+        await router.push(['/books', '/profile', '/contact'].includes(destination) ? destination : '/books')
+      }
     }
   } catch (error) {
     errorMessage.value = error.message

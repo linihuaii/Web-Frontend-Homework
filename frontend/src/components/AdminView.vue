@@ -1,13 +1,22 @@
 <script setup>
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { account, api } from '../api'
 import AuthView from './AuthView.vue'
-import LoanTable from '../components/LoanTable.vue'
+import LoanTable from './LoanTable.vue'
 
 const tab = ref('books')
 const books = ref([])
 const loans = ref([])
+const feedbackRows = ref([])
+const feedbackFilter = ref('')
+const feedbackId = ref(null)
+const resolvingFeedback = ref(false)
+const selectedFeedback = computed(() => feedbackRows.value.find(row => row.id === feedbackId.value))
+const pendingFeedbackCount = computed(() => feedbackRows.value.filter(row => !row.resolvedAt).length)
+const visibleFeedback = computed(() => feedbackRows.value.filter(row =>
+  !feedbackFilter.value || (row.resolvedAt ? 'resolved' : 'open') === feedbackFilter.value
+))
 const loading = ref(false)
 const saving = ref(false)
 const processing = ref(null)
@@ -24,10 +33,13 @@ async function load() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const [bookRows, loanRows] = await Promise.all([api('/books'), api('/admin/loans')])
+    const [bookRows, loanRows, messages] = await Promise.all([
+      api('/books'), api('/admin/loans'), api('/admin/feedback'),
+    ])
     if (sequence !== loadSequence) return
     books.value = bookRows
     loans.value = loanRows
+    feedbackRows.value = messages
   } catch (error) {
     if (sequence === loadSequence) errorMessage.value = error.message
   } finally {
@@ -42,6 +54,8 @@ watch(() => account.value?.role, role => {
     loadSequence++
     books.value = []
     loans.value = []
+    feedbackRows.value = []
+    feedbackId.value = null
     dialog.value = false
     loading.value = false
   }
@@ -113,6 +127,20 @@ async function processLoan(loan, status) {
     processing.value = null
   }
 }
+
+async function resolveFeedback(row) {
+  if (resolvingFeedback.value) return
+  resolvingFeedback.value = true
+  try {
+    await api(`/admin/feedback/${row.id}/resolve`, { method: 'PATCH', body: {} })
+    ElMessage.success('反馈已标记为已处理')
+    await load()
+  } catch (error) {
+    ElMessage.error(error.message)
+  } finally {
+    resolvingFeedback.value = false
+  }
+}
 </script>
 
 <template>
@@ -121,7 +149,7 @@ async function processLoan(loan, status) {
     <section class="page-heading">
       <div>
         <h1>管理后台</h1>
-        <p>维护馆藏信息，处理借阅申请与归还。</p>
+        <p>维护馆藏、审批借阅申请并处理读者反馈。</p>
       </div>
       <el-button :loading="loading" @click="load">刷新</el-button>
     </section>
@@ -150,8 +178,49 @@ async function processLoan(loan, status) {
         <el-tab-pane label="借阅管理" name="loans">
           <LoanTable :rows="loans" :processing="processing" admin @process="processLoan" />
         </el-tab-pane>
+        <el-tab-pane :label="`意见反馈（${pendingFeedbackCount} 待处理）`" name="feedback">
+          <div class="filters record-filter">
+            <el-select v-model="feedbackFilter" clearable placeholder="全部状态" aria-label="反馈状态">
+              <el-option label="待处理" value="open" />
+              <el-option label="已处理" value="resolved" />
+            </el-select>
+          </div>
+          <el-table :data="visibleFeedback" row-key="id" empty-text="暂无符合条件的反馈">
+            <el-table-column prop="subject" label="主题" min-width="180" show-overflow-tooltip />
+            <el-table-column prop="username" label="提交读者" min-width="125" />
+            <el-table-column prop="createdAt" label="提交时间" width="174" />
+            <el-table-column label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag :type="row.resolvedAt ? 'success' : 'warning'">{{ row.resolvedAt ? '已处理' : '待处理' }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="105" fixed="right">
+              <template #default="{ row }">
+                <el-button size="small" @click="feedbackId = row.id">查看反馈</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
       </el-tabs>
     </section>
+
+    <el-dialog :model-value="!!selectedFeedback" title="反馈详情" width="min(560px, 92vw)"
+      @update:model-value="feedbackId = null">
+      <template v-if="selectedFeedback">
+        <h3 class="feedback-subject">{{ selectedFeedback.subject }}</h3>
+        <dl class="book-detail">
+          <dt>提交读者</dt><dd>{{ selectedFeedback.username }}</dd>
+          <dt>提交时间</dt><dd>{{ selectedFeedback.createdAt }}</dd>
+          <dt>处理状态</dt><dd>{{ selectedFeedback.resolvedAt ? '已处理 · ' + selectedFeedback.resolvedAt : '待处理' }}</dd>
+        </dl>
+        <p class="detail-description feedback-message">{{ selectedFeedback.message }}</p>
+      </template>
+      <template #footer>
+        <el-button @click="feedbackId = null">关闭</el-button>
+        <el-button v-if="selectedFeedback && !selectedFeedback.resolvedAt" type="primary" :loading="resolvingFeedback"
+          @click="resolveFeedback(selectedFeedback)">标记已处理</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="dialog" :title="editing === null ? '添加图书' : '编辑图书'" width="min(550px, 92vw)"
       :close-on-click-modal="false" :show-close="!saving" :close-on-press-escape="!saving">

@@ -25,8 +25,11 @@ async function logout() {
         图书管理系统
       </RouterLink>
       <nav aria-label="主导航">
-        <RouterLink to="/">馆藏目录</RouterLink>
-        <RouterLink v-if="account?.role === 'READER'" to="/loans">借阅记录</RouterLink>
+        <RouterLink to="/">首页</RouterLink>
+        <RouterLink to="/books">书籍管理</RouterLink>
+        <RouterLink v-if="account?.role !== 'ADMIN'" to="/profile">个人中心</RouterLink>
+        <RouterLink to="/about">网站介绍</RouterLink>
+        <RouterLink to="/contact">联系我们</RouterLink>
         <RouterLink to="/admin">管理后台</RouterLink>
       </nav>
       <div class="session">

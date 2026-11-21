@@ -1,3 +1,4 @@
+/node_modules/
 frontend/node_modules/
 frontend/dist/
 backend/target/
@@ -8,3 +9,9 @@ backend/target/
 !.env.example
 *.sql.gz
 *.bundle
+/library-source.tar.gz
+
+/前端说明.md
+/后端说明.md
+/任务描述.md
+/腾讯云部署.md

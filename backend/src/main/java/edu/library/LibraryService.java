@@ -1,6 +1,7 @@
 package edu.library;
 
 import edu.library.LibraryController.BookInput;
+import edu.library.LibraryController.FeedbackInput;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -14,7 +15,7 @@ class LibraryService {
     enum LoanStatus { PENDING, APPROVED, REJECTED, RETURNED }
 
     private static final String LOAN_COLUMNS = """
-            SELECT l.id, b.title, l.status,
+            SELECT l.id, l.book_id AS bookId, b.title, l.status,
               DATE_FORMAT(l.requested_at, '%Y-%m-%d %H:%i:%s') AS requestedAt,
               DATE_FORMAT(l.updated_at, '%Y-%m-%d %H:%i:%s') AS updatedAt
             """;
@@ -30,6 +31,47 @@ class LibraryService {
                 SELECT id,title,author,category,description,total,borrowed,total-borrowed AS available
                 FROM books WHERE deleted=FALSE ORDER BY id DESC
                 """);
+    }
+
+    Map<String, Object> stats() {
+        return db.queryForMap("""
+                SELECT inventory.bookTitles, inventory.totalCopies, inventory.borrowedCopies,
+                       inventory.totalCopies - inventory.borrowedCopies AS availableCopies,
+                       (SELECT COUNT(*) FROM users WHERE role='READER') AS readers,
+                       activity.activeReaders, activity.pendingLoans
+                FROM (
+                    SELECT COUNT(*) AS bookTitles, COALESCE(SUM(total), 0) AS totalCopies,
+                           COALESCE(SUM(borrowed), 0) AS borrowedCopies
+                    FROM books WHERE deleted=FALSE
+                ) inventory
+                CROSS JOIN (
+                    SELECT COUNT(DISTINCT CASE WHEN status='APPROVED' THEN user_id END) AS activeReaders,
+                           COUNT(CASE WHEN status='PENDING' THEN 1 END) AS pendingLoans
+                    FROM loans WHERE status IN ('APPROVED', 'PENDING')
+                ) activity
+                """);
+    }
+
+    void submitFeedback(long readerId, FeedbackInput input) {
+        db.update("INSERT INTO feedback(user_id, subject, message) VALUES (?, ?, ?)",
+                readerId, input.subject().strip(), input.message().strip());
+    }
+
+    List<Map<String, Object>> feedback() {
+        return db.queryForList("""
+                SELECT f.id, u.username, f.subject, f.message,
+                       DATE_FORMAT(f.created_at, '%Y-%m-%d %H:%i:%s') AS createdAt,
+                       DATE_FORMAT(f.resolved_at, '%Y-%m-%d %H:%i:%s') AS resolvedAt
+                FROM feedback f JOIN users u ON u.id=f.user_id
+                ORDER BY f.resolved_at IS NOT NULL, f.id DESC
+                """);
+    }
+
+    void resolveFeedback(long id) {
+        db.update("UPDATE feedback SET resolved_at=CURRENT_TIMESTAMP WHERE id=? AND resolved_at IS NULL", id);
+        if (db.queryForObject("SELECT COUNT(*) FROM feedback WHERE id=?", Integer.class, id) == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "反馈不存在");
+        }
     }
 
     List<Map<String, Object>> publicLoans() {
@@ -91,7 +133,18 @@ class LibraryService {
 
     @Transactional
     public void processLoan(long id, LoanStatus next) {
-        var books = db.queryForList("SELECT book_id FROM loans WHERE id=?", Long.class, id);
+        transitionLoan(id, next, null);
+    }
+
+    @Transactional
+    public void returnLoan(long id, long userId) {
+        transitionLoan(id, LoanStatus.RETURNED, userId);
+    }
+
+    private void transitionLoan(long id, LoanStatus next, Long userId) {
+        var books = userId == null
+                ? db.queryForList("SELECT book_id FROM loans WHERE id=?", Long.class, id)
+                : db.queryForList("SELECT book_id FROM loans WHERE id=? AND user_id=?", Long.class, id, userId);
         if (books.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "借阅记录不存在");
         }
